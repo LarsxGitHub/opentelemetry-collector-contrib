@@ -31,51 +31,52 @@ type Matcher interface {
 	Matches(label string) bool
 }
 
-// StrictMatcher is a matcher that matches by exact match.
-type StrictMatcher struct {
+// strictMatcher is a matcher that matches by exact match.
+type strictMatcher struct {
 	Include string
+	_       struct{}
 }
 
 // Matches returns true if the matcher matches the label.
-func (sm *StrictMatcher) Matches(label string) bool {
+func (sm *strictMatcher) Matches(label string) bool {
 	return label == sm.Include
 }
 
-// RegexMatcher is a matcher that matches by regular expression.
-type RegexMatcher struct {
+// regexMatcher is a matcher that matches by regular expression.
+type regexMatcher struct {
 	re *regexp.Regexp
 }
 
 // Matches returns true if the matcher matches the label.
-func (rm *RegexMatcher) Matches(label string) bool {
+func (rm *regexMatcher) Matches(label string) bool {
 	return rm.re.MatchString(label)
 }
 
-// MatcherCorpus is a collection of matchers.
-type MatcherCorpus struct {
+// matcherCorpus is a collection of matchers.
+type matcherCorpus struct {
 	matchers []Matcher
 }
 
 // Add adds a matcher to the corpus.
-func (mc *MatcherCorpus) Add(lm LabelMatcher) error {
+func (mc *matcherCorpus) Add(lm LabelMatcher) error {
 	switch lm.MatchType {
 	case strictMatchType:
-		mc.matchers = append(mc.matchers, &StrictMatcher{Include: lm.Include})
+		mc.matchers = append(mc.matchers, &strictMatcher{Include: lm.Include})
 	case regexpMatchType:
 		re, err := regexp.Compile(lm.Include)
 		if err != nil {
 			return fmt.Errorf("failed to compile regex from include '%v': %w", lm.Include, err)
 		}
-		mc.matchers = append(mc.matchers, &RegexMatcher{re: re})
+		mc.matchers = append(mc.matchers, &regexMatcher{re: re})
 	default:
 		return fmt.Errorf("unknown match type: %v", lm.MatchType)
 	}
 	return nil
 }
 
-// MatcherCorpusFromConfig creates a MatcherCorpus from a Config.
-func MatcherCorpusFromConfig(config *Config) (*MatcherCorpus, error) {
-	mc := &MatcherCorpus{}
+// matcherCorpusFromConfig creates a matcherCorpus from a Config.
+func matcherCorpusFromConfig(config *Config) (*matcherCorpus, error) {
+	mc := &matcherCorpus{}
 	for _, lm := range config.ContainerLabelsToResourceAttributes {
 		if err := mc.Add(lm); err != nil {
 			return nil, err
@@ -85,7 +86,7 @@ func MatcherCorpusFromConfig(config *Config) (*MatcherCorpus, error) {
 }
 
 // Matches returns true if any of the matchers in the corpus matches the label.
-func (mc *MatcherCorpus) Matches(label string) bool {
+func (mc *matcherCorpus) Matches(label string) bool {
 	for _, matcher := range mc.matchers {
 		if matcher.Matches(label) {
 			return true
@@ -95,7 +96,7 @@ func (mc *MatcherCorpus) Matches(label string) bool {
 }
 
 // IsEmpty returns true if the corpus is empty.
-func (mc *MatcherCorpus) IsEmpty() bool {
+func (mc *matcherCorpus) IsEmpty() bool {
 	return mc == nil || len(mc.matchers) == 0
 }
 
@@ -115,12 +116,12 @@ type metricsReceiver struct {
 	settings receiver.Settings
 	client   *docker.Client
 	mb       *metadata.MetricsBuilder
-	lm       *MatcherCorpus
+	lm       *matcherCorpus
 	cancel   context.CancelFunc
 }
 
 func newMetricsReceiver(set receiver.Settings, config *Config) *metricsReceiver {
-	lm, err := MatcherCorpusFromConfig(config)
+	lm, err := matcherCorpusFromConfig(config)
 	if err != nil {
 		// This can practically never happen due to config validation.
 		set.Logger.Warn("Failed to parse include regexes for labels from config.", zap.Error(err))
